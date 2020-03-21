@@ -1,4 +1,4 @@
-package certutils_test
+package certs_test
 
 import (
 	"crypto/tls"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdelillo/go-utils/certutils"
+	"github.com/mdelillo/go-utils/certs"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +30,7 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 
 	context("GenerateCert", func() {
 		it("generates a self-signed cert and key", func() {
-			certPEMBlock, keyPEMBlock, err := certutils.GenerateCert()
+			certPEMBlock, keyPEMBlock, err := certs.GenerateCert()
 			require.NoError(t, err)
 
 			cert := parseCert(certPEMBlock, keyPEMBlock)
@@ -48,9 +48,9 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 
 		context("WithIsCA", func() {
 			it("generates a cert that can sign other certs", func() {
-				caCertPEMBlock, caKeyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithIsCA(true),
-					certutils.WithCommonName("ca"),
+				caCertPEMBlock, caKeyPEMBlock, err := certs.GenerateCert(
+					certs.WithIsCA(true),
+					certs.WithCommonName("ca"),
 				)
 				require.NoError(t, err)
 
@@ -65,10 +65,10 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 				assert.True(t, ca.IsCA)
 				assert.True(t, ca.BasicConstraintsValid)
 
-				intermediateCertPEMBlock, intermediateKeyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithIsCA(true),
-					certutils.WithCA(caCertPEMBlock, caKeyPEMBlock),
-					certutils.WithCommonName("intermediate"),
+				intermediateCertPEMBlock, intermediateKeyPEMBlock, err := certs.GenerateCert(
+					certs.WithIsCA(true),
+					certs.WithCA(caCertPEMBlock, caKeyPEMBlock),
+					certs.WithCommonName("intermediate"),
 				)
 				require.NoError(t, err)
 
@@ -76,10 +76,10 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 				assert.Equal(t, "intermediate", intermediate.Subject.CommonName)
 				assert.Equal(t, "ca", intermediate.Issuer.CommonName)
 
-				leafCertPEMBlock, leafKeyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithIsCA(true),
-					certutils.WithCA(intermediateCertPEMBlock, intermediateKeyPEMBlock),
-					certutils.WithCommonName("leaf"),
+				leafCertPEMBlock, leafKeyPEMBlock, err := certs.GenerateCert(
+					certs.WithIsCA(true),
+					certs.WithCA(intermediateCertPEMBlock, intermediateKeyPEMBlock),
+					certs.WithCommonName("leaf"),
 				)
 				require.NoError(t, err)
 
@@ -92,14 +92,14 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 		context("WithCA", func() {
 			it("generates a cert signed by the CA", func() {
 				caCommonName := "some-ca"
-				caCertPEMBlock, caKeyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithIsCA(true),
-					certutils.WithCommonName(caCommonName),
+				caCertPEMBlock, caKeyPEMBlock, err := certs.GenerateCert(
+					certs.WithIsCA(true),
+					certs.WithCommonName(caCommonName),
 				)
 				require.NoError(t, err)
 
-				certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithCA(caCertPEMBlock, caKeyPEMBlock),
+				certPEMBlock, keyPEMBlock, err := certs.GenerateCert(
+					certs.WithCA(caCertPEMBlock, caKeyPEMBlock),
 				)
 				require.NoError(t, err)
 
@@ -109,9 +109,9 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 
 			context("WithMaxPathLen", func() {
 				it("sets the MaxPathLen", func() {
-					certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(
-						certutils.WithIsCA(true),
-						certutils.WithMaxPathLen(99),
+					certPEMBlock, keyPEMBlock, err := certs.GenerateCert(
+						certs.WithIsCA(true),
+						certs.WithMaxPathLen(99),
 					)
 					require.NoError(t, err)
 
@@ -123,9 +123,9 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 
 			context("WithMaxPathLen of 0", func() {
 				it("sets MaxPathLenZero to true", func() {
-					certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(
-						certutils.WithIsCA(true),
-						certutils.WithMaxPathLen(0),
+					certPEMBlock, keyPEMBlock, err := certs.GenerateCert(
+						certs.WithIsCA(true),
+						certs.WithMaxPathLen(0),
 					)
 					require.NoError(t, err)
 
@@ -144,12 +144,12 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 				dnsName := "some-dns-name"
 				ipAddress := "127.0.0.1"
 
-				certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(
-					certutils.WithCommonName(commonName),
-					certutils.WithDNSNames(dnsName),
-					certutils.WithIPAddresses(ipAddress),
-					certutils.WithNotBefore(notBefore),
-					certutils.WithNotAfter(notAfter),
+				certPEMBlock, keyPEMBlock, err := certs.GenerateCert(
+					certs.WithCommonName(commonName),
+					certs.WithDNSNames(dnsName),
+					certs.WithIPAddresses(ipAddress),
+					certs.WithNotBefore(notBefore),
+					certs.WithNotAfter(notAfter),
 				)
 				require.NoError(t, err)
 

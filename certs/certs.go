@@ -1,4 +1,4 @@
-package certutils
+package certs
 
 import (
 	"bytes"

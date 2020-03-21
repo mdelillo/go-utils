@@ -1,4 +1,4 @@
-package netutils_test
+package net_test
 
 import (
 	"crypto/tls"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdelillo/go-utils/netutils"
+	"github.com/mdelillo/go-utils/net"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 	"github.com/stretchr/testify/assert"
@@ -33,7 +33,7 @@ func testHTTPClient(t *testing.T, context spec.G, it spec.S) {
 
 	context("NewHTTPClient", func() {
 		it("creates an HTTPClient with default config", func() {
-			client := netutils.NewHTTPClient()
+			client := net.NewHTTPClient()
 
 			response, err := client.Get(server.URL)
 			require.NoError(t, err)
@@ -47,14 +47,14 @@ func testHTTPClient(t *testing.T, context spec.G, it spec.S) {
 
 		context("WithTimeout", func() {
 			it("overwrites the default timeout", func() {
-				client := netutils.NewHTTPClient(netutils.WithTimeout(1 * time.Second))
+				client := net.NewHTTPClient(net.WithTimeout(1 * time.Second))
 				assert.Equal(t, 1*time.Second, client.Timeout)
 			})
 		})
 
 		context("WithTLSHandshakeTimeout", func() {
 			it("overwrites the default timeout", func() {
-				client := netutils.NewHTTPClient(netutils.WithTLSHandshakeTimeout(1 * time.Second))
+				client := net.NewHTTPClient(net.WithTLSHandshakeTimeout(1 * time.Second))
 				assert.Equal(t, 1*time.Second, client.Transport.(*http.Transport).TLSHandshakeTimeout)
 			})
 		})
@@ -62,7 +62,7 @@ func testHTTPClient(t *testing.T, context spec.G, it spec.S) {
 		context("WithTLSCLientConfig", func() {
 			it("uses the TLS config", func() {
 				tlsConfig := &tls.Config{ServerName: "some-server-name"}
-				client := netutils.NewHTTPClient(netutils.WithTLSClientConfig(tlsConfig))
+				client := net.NewHTTPClient(net.WithTLSClientConfig(tlsConfig))
 				assert.Equal(t, tlsConfig, client.Transport.(*http.Transport).TLSClientConfig)
 			})
 		})

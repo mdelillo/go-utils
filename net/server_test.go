@@ -1,4 +1,4 @@
-package netutils_test
+package net_test
 
 import (
 	"crypto/tls"
@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdelillo/go-utils/certutils"
-	"github.com/mdelillo/go-utils/netutils"
+	"github.com/mdelillo/go-utils/certs"
+	"github.com/mdelillo/go-utils/net"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 	"github.com/stretchr/testify/assert"
@@ -28,7 +28,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 
 	it.Before(func() {
 		var err error
-		listenAddr, err = netutils.GetFreeAddr()
+		listenAddr, err = net.GetFreeAddr()
 		require.NoError(t, err)
 	})
 
@@ -39,7 +39,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 				_, _ = fmt.Fprint(w, handlerResponse)
 			})
 
-			server := netutils.NewServer(listenAddr, handler)
+			server := net.NewServer(listenAddr, handler)
 
 			serverDone := make(chan interface{})
 			go func() {
@@ -48,7 +48,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 				close(serverDone)
 			}()
 
-			err := netutils.WaitForServerToBeAvailable(listenAddr, 5*time.Second)
+			err := net.WaitForServerToBeAvailable(listenAddr, 5*time.Second)
 			require.NoError(t, err)
 
 			resp, err := http.Get("http://" + listenAddr)
@@ -67,7 +67,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 				return readFromChannel(serverDone)
 			}, time.Second, 10*time.Millisecond)
 
-			assert.False(t, netutils.ServerIsAvailable(listenAddr))
+			assert.False(t, net.ServerIsAvailable(listenAddr))
 		})
 
 		context("WithTLS", func() {
@@ -89,7 +89,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 					_, _ = fmt.Fprint(w, handlerResponse)
 				})
 
-				certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(certutils.WithIPAddresses("127.0.0.1"))
+				certPEMBlock, keyPEMBlock, err := certs.GenerateCert(certs.WithIPAddresses("127.0.0.1"))
 				require.NoError(t, err)
 
 				certPath := filepath.Join(tempDir, "cert")
@@ -100,7 +100,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 				err = ioutil.WriteFile(keyPath, keyPEMBlock, 0644)
 				require.NoError(t, err)
 
-				server := netutils.NewServer(listenAddr, handler, netutils.WithTLS(certPath, keyPath))
+				server := net.NewServer(listenAddr, handler, net.WithTLS(certPath, keyPath))
 
 				serverDone := make(chan interface{})
 				go func() {
@@ -109,7 +109,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 					close(serverDone)
 				}()
 
-				err = netutils.WaitForServerToBeAvailable(listenAddr, 5*time.Second)
+				err = net.WaitForServerToBeAvailable(listenAddr, 5*time.Second)
 				require.NoError(t, err)
 
 				rootCAs := x509.NewCertPool()
@@ -137,7 +137,7 @@ func testServer(t *testing.T, context spec.G, it spec.S) {
 					return readFromChannel(serverDone)
 				}, time.Second, 10*time.Millisecond)
 
-				assert.False(t, netutils.ServerIsAvailable(listenAddr))
+				assert.False(t, net.ServerIsAvailable(listenAddr))
 			})
 		})
 	})
