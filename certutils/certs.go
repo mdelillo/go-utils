@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type certConfig struct {
 	maxPathLen     int
 	commonName     string
 	dnsNames       []string
+	ipAddresses    []net.IP
 	notBefore      time.Time
 	notAfter       time.Time
 }
@@ -60,9 +62,20 @@ func WithCommonName(commonName string) CertOption {
 	}
 }
 
-func WithDNSNames(dnsNames []string) CertOption {
+func WithDNSNames(dnsNames ...string) CertOption {
 	return func(c *certConfig) {
 		c.dnsNames = dnsNames
+	}
+}
+
+func WithIPAddresses(ipAddresses ...string) CertOption {
+	return func(c *certConfig) {
+		var ips []net.IP
+		for _, ipAddress := range ipAddresses {
+			ips = append(ips, net.ParseIP(ipAddress))
+		}
+
+		c.ipAddresses = ips
 	}
 }
 
@@ -104,6 +117,7 @@ func GenerateCert(options ...CertOption) ([]byte, []byte, error) {
 		ExtKeyUsage:           config.extKeyUsage,
 		Subject:               pkix.Name{CommonName: config.commonName},
 		DNSNames:              config.dnsNames,
+		IPAddresses:           config.ipAddresses,
 		NotBefore:             config.notBefore,
 		NotAfter:              config.notAfter,
 		IsCA:                  config.isCA,

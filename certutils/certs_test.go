@@ -39,6 +39,7 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 			assert.Equal(t, "my-cert", cert.Subject.CommonName)
 			assert.Equal(t, "my-cert", cert.Issuer.CommonName)
 			assert.Empty(t, cert.DNSNames)
+			assert.Empty(t, cert.IPAddresses)
 			assert.WithinDuration(t, time.Now(), cert.NotBefore, time.Minute)
 			assert.WithinDuration(t, time.Now().Add(time.Hour*24*365), cert.NotAfter, time.Minute)
 			assert.False(t, cert.IsCA)
@@ -140,11 +141,13 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 				commonName := "some-common-name"
 				notBefore := time.Now().Add(-1 * time.Hour)
 				notAfter := time.Now().Add(time.Hour)
-				dnsNames := []string{"some-dns-name"}
+				dnsName := "some-dns-name"
+				ipAddress := "127.0.0.1"
 
 				certPEMBlock, keyPEMBlock, err := certutils.GenerateCert(
 					certutils.WithCommonName(commonName),
-					certutils.WithDNSNames(dnsNames),
+					certutils.WithDNSNames(dnsName),
+					certutils.WithIPAddresses(ipAddress),
 					certutils.WithNotBefore(notBefore),
 					certutils.WithNotAfter(notAfter),
 				)
@@ -152,7 +155,9 @@ func testCerts(t *testing.T, context spec.G, it spec.S) {
 
 				cert := parseCert(certPEMBlock, keyPEMBlock)
 				assert.Equal(t, commonName, cert.Subject.CommonName)
-				assert.Equal(t, dnsNames, cert.DNSNames)
+				assert.Equal(t, []string{dnsName}, cert.DNSNames)
+				assert.Len(t, cert.IPAddresses, 1)
+				assert.Equal(t, ipAddress, cert.IPAddresses[0].String())
 				assert.WithinDuration(t, notBefore, cert.NotBefore, time.Second)
 				assert.WithinDuration(t, notAfter, cert.NotAfter, time.Second)
 			})
