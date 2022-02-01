@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultTimeout             = 5 * time.Second
+	defaultTimeout             = time.Minute
 	defaultDialTimeout         = 5 * time.Second
 	defaultTLSHandshakeTimeout = 5 * time.Second
 )
