@@ -2,6 +2,7 @@ package net
 
 import (
 	"fmt"
+	"github.com/mdelillo/go-utils/ansi"
 	"io"
 	"math"
 	"path/filepath"
@@ -17,8 +18,12 @@ func DownloadFilesWithProgress(fileDownloads []FileDownload, writer io.Writer, p
 	downloader := NewFileDownloader()
 
 	downloadsProgress := map[FileDownload]DownloadProgress{}
-
 	var previousPrint time.Time
+
+	inPlaceWriter := ansi.InPlaceWriter{
+		Writer:    writer,
+		LineCount: len(fileDownloads),
+	}
 
 	err := downloader.DownloadFilesWithProgressUpdates(fileDownloads, func(downloadProgress DownloadProgress) {
 		downloadsProgress[downloadProgress.FileDownload] = downloadProgress
@@ -29,20 +34,21 @@ func DownloadFilesWithProgress(fileDownloads []FileDownload, writer io.Writer, p
 			return
 		}
 
-		printDownloadsProgress(fileDownloads, downloadsProgress, writer)
+		printDownloadsProgress(fileDownloads, downloadsProgress, &inPlaceWriter)
 		previousPrint = now
 	})
 	if err != nil {
 		return err
 	}
 
-	printDownloadsProgress(fileDownloads, downloadsProgress, writer)
+	printDownloadsProgress(fileDownloads, downloadsProgress, &inPlaceWriter)
 
 	return nil
 }
 
 func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[FileDownload]DownloadProgress, writer io.Writer) {
-	_, _ = fmt.Fprint(writer, "\033[H\033[2J")
+	var output string
+
 	for _, fileDownload := range fileDownloads {
 		progress := downloadsProgress[fileDownload]
 
@@ -53,16 +59,18 @@ func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[
 			} else {
 				precision = 10 * time.Millisecond
 			}
-			_, _ = fmt.Fprintf(writer, "Downloaded %s (%s in %s)\n",
+
+			output += fmt.Sprintf("Downloaded %s (%s in %s)\n",
 				fileDownload.FilePath,
 				formatFileSize(float64(progress.TotalBytes)),
 				progress.DownloadTime.Round(precision),
 			)
+
 			continue
 		}
 
 		if progress.DownloadedBytes == 0 {
-			_, _ = fmt.Fprintln(writer, filepath.Base(fileDownload.FilePath))
+			output += fmt.Sprintln(filepath.Base(fileDownload.FilePath))
 			continue
 		}
 
@@ -78,8 +86,7 @@ func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[
 
 		remainingDownloadTime := (time.Duration(float64(progress.TotalBytes-progress.DownloadedBytes)/progress.AverageBytesPerMicrosecond) + 999*time.Microsecond) * time.Microsecond
 
-		_, _ = fmt.Fprintf(writer,
-			"Downloading %s: %s  %s/%s (%s remaining)\n",
+		output += fmt.Sprintf("Downloading %s: %s  %s/%s (%s remaining)\n",
 			filepath.Base(fileDownload.FilePath),
 			progressBar,
 			formatFileSize(float64(progress.DownloadedBytes)),
@@ -87,6 +94,8 @@ func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[
 			remainingDownloadTime.Truncate(time.Second),
 		)
 	}
+
+	_, _ = fmt.Fprint(writer, output)
 }
 
 func formatFileSize(bytes float64) string {
