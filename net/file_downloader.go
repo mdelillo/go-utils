@@ -45,15 +45,50 @@ func (d *FileDownloader) DownloadFiles(files []FileDownload) error {
 	return nil
 }
 
-func (d *FileDownloader) DownloadFilesWithProgressUpdates(files []FileDownload, callback DownloadProgressCallback) error {
-	for _, file := range files {
-		err := d.downloadFileWithCallback(file, callback)
+func (d *FileDownloader) DownloadFilesWithProgressUpdates(fileDownloads []FileDownload, callback DownloadProgressCallback) error {
+	for _, fileDownload := range fileDownloads {
+		contentLength, err := d.getContentLength(fileDownload.URL)
 		if err != nil {
-			return fmt.Errorf("failed to download %s: %w", filepath.Base(file.FilePath), err)
+			return fmt.Errorf("failed to get content size of %s: %w", filepath.Base(fileDownload.FilePath), err)
+		}
+
+		callback(DownloadProgress{
+			FileDownload: fileDownload,
+			TotalBytes:   contentLength,
+		})
+	}
+
+	for _, fileDownload := range fileDownloads {
+		err := d.downloadFileWithCallback(fileDownload, callback)
+		if err != nil {
+			return fmt.Errorf("failed to download %s: %w", filepath.Base(fileDownload.FilePath), err)
 		}
 	}
 
 	return nil
+}
+
+func (d *FileDownloader) getContentLength(url string) (int64, error) {
+	if d.Client == nil {
+		d.Client = NewHTTPClient(WithTimeout(10 * time.Minute))
+	}
+
+	req, err := http.NewRequest(http.MethodHead, url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := d.Client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return 0, fmt.Errorf("got non-2XX response: %s", resp.Status)
+	}
+
+	return resp.ContentLength, nil
 }
 
 func (d *FileDownloader) downloadFile(fileDownload FileDownload) error {

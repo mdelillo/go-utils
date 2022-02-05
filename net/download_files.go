@@ -70,7 +70,7 @@ func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[
 		}
 
 		if progress.DownloadedBytes == 0 {
-			output += fmt.Sprintln(filepath.Base(fileDownload.FilePath))
+			output += fmt.Sprintf("%s (%s)\n", filepath.Base(fileDownload.FilePath), formatFileSize(float64(progress.TotalBytes)))
 			continue
 		}
 
