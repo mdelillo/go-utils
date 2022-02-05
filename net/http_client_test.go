@@ -2,6 +2,7 @@ package net_test
 
 import (
 	"crypto/tls"
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPClient(t *testing.T) {
@@ -40,7 +40,7 @@ func testHTTPClient(t *testing.T, context spec.G, it spec.S) {
 			defer response.Body.Close()
 
 			assert.Equal(t, http.StatusOK, response.StatusCode)
-			assert.Equal(t, 5*time.Second, client.Timeout)
+			assert.Equal(t, time.Minute, client.Timeout)
 			assert.Equal(t, 5*time.Second, client.Transport.(*http.Transport).TLSHandshakeTimeout)
 			assert.NotNil(t, client.Transport.(*http.Transport).DialContext)
 		})
