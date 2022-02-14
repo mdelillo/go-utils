@@ -1,56 +1,93 @@
-package net
+package main
 
 import (
 	"fmt"
 	"github.com/mdelillo/go-utils/ansi"
+	"github.com/mdelillo/go-utils/net"
 	"io"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-func DownloadFiles(fileDownloads []FileDownload) error {
-	return NewFileDownloader().DownloadFiles(fileDownloads)
-}
+const printInterval = time.Second / 10
 
-func DownloadFilesWithProgress(fileDownloads []FileDownload, writer io.Writer, printInterval time.Duration) error {
-	downloader := NewFileDownloader()
-
-	downloadsProgress := map[FileDownload]DownloadProgress{}
-	var previousPrint time.Time
-
-	inPlaceWriter := ansi.InPlaceWriter{
-		Writer:    writer,
-		LineCount: len(fileDownloads),
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Printf("Usage: %s <url> [<url> ...]\n\n", os.Args[0])
+		fmt.Printf("Example: %s http://ipv4.download.thinkbroadband.com/5MB.zip http://ipv4.download.thinkbroadband.com/20MB.zip http://ipv4.download.thinkbroadband.com/50MB.zip\n", os.Args[0])
+		os.Exit(1)
 	}
 
-	err := downloader.DownloadFilesWithProgressUpdates(fileDownloads, func(downloadProgress DownloadProgress) {
-		downloadsProgress[downloadProgress.FileDownload] = downloadProgress
+	if err := downloadFiles(os.Args[1:]); err != nil {
+		fmt.Printf("Error: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+func downloadFiles(urls []string) error {
+	downloader := net.FileDownloader{}
+
+	var fileDownloads []net.FileDownload
+	for _, url := range urls {
+		filePath := filepath.Base(url)
+		fileDownloads = append(fileDownloads, net.FileDownload{
+			URL:      url,
+			FilePath: filePath,
+		})
+	}
+
+	progresses := &downloadsProgresses{
+		fileDownloads: fileDownloads,
+		writer: &ansi.InPlaceWriter{
+			Writer:    os.Stdout,
+			LineCount: len(fileDownloads),
+		},
+	}
+
+	var previousPrint time.Time
+	err := downloader.DownloadFilesWithProgressUpdates(fileDownloads, func(downloadProgress net.DownloadProgress) {
+		progresses.update(downloadProgress)
 
 		now := time.Now()
-
 		if now.Sub(previousPrint) < printInterval {
 			return
 		}
 
-		printDownloadsProgress(fileDownloads, downloadsProgress, &inPlaceWriter)
+		progresses.print()
+
 		previousPrint = now
 	})
 	if err != nil {
 		return err
 	}
 
-	printDownloadsProgress(fileDownloads, downloadsProgress, &inPlaceWriter)
+	progresses.print()
 
 	return nil
 }
 
-func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[FileDownload]DownloadProgress, writer io.Writer) {
+type downloadsProgresses struct {
+	fileDownloads []net.FileDownload
+	writer        io.Writer
+	progresses    map[net.FileDownload]net.DownloadProgress
+}
+
+func (d *downloadsProgresses) update(downloadProgress net.DownloadProgress) {
+	if d.progresses == nil {
+		d.progresses = map[net.FileDownload]net.DownloadProgress{}
+	}
+
+	d.progresses[downloadProgress.FileDownload] = downloadProgress
+}
+
+func (d *downloadsProgresses) print() {
 	var output string
 
-	for _, fileDownload := range fileDownloads {
-		progress := downloadsProgress[fileDownload]
+	for _, fileDownload := range d.fileDownloads {
+		progress := d.progresses[fileDownload]
 
 		if progress.TotalBytes > 0 && progress.DownloadedBytes == progress.TotalBytes {
 			var precision time.Duration
@@ -95,7 +132,7 @@ func printDownloadsProgress(fileDownloads []FileDownload, downloadsProgress map[
 		)
 	}
 
-	_, _ = fmt.Fprint(writer, output)
+	_, _ = fmt.Fprint(d.writer, output)
 }
 
 func formatFileSize(bytes float64) string {

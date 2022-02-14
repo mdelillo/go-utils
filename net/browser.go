@@ -3,13 +3,39 @@ package net
 import (
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
 )
 
 type BrowserOption func(*Browser)
+
+type RateLimiter interface {
+	AddRequest(req *http.Request, t time.Time)
+	GetBackoffAt(req *http.Request, t time.Time) time.Duration
+}
+
+type Browser struct {
+	Client      *http.Client
+	Headers     map[string]string
+	RateLimiter RateLimiter
+}
+
+func NewBrowser(options ...BrowserOption) *Browser {
+	browser := &Browser{Client: NewHTTPClient()}
+
+	for _, option := range options {
+		option(browser)
+	}
+
+	return browser
+}
+
+func WithClient(client *http.Client) func(*Browser) {
+	return func(b *Browser) {
+		b.Client = client
+	}
+}
 
 func WithDefaultHeader(name, value string) func(*Browser) {
 	return func(b *Browser) {
@@ -31,69 +57,99 @@ func WithDefaultHeaders(headers map[string]string) func(*Browser) {
 	}
 }
 
-func WithRequestDelay(delay time.Duration) func(*Browser) {
+func WithDefaultUserAgent(userAgent string) func(*Browser) {
 	return func(b *Browser) {
-		b.RequestDelay = delay
+		if b.Headers == nil {
+			b.Headers = map[string]string{}
+		}
+		b.Headers["User-Agent"] = userAgent
 	}
 }
 
-func WithCookieJar(jar *cookiejar.Jar) func(*Browser) {
+func WithRateLimiter(rateLimiter RateLimiter) func(*Browser) {
 	return func(b *Browser) {
-		b.Client.Jar = jar
+		b.RateLimiter = rateLimiter
 	}
 }
 
-type Browser struct {
-	Client          *http.Client
-	Headers         map[string]string
-	RequestDelay    time.Duration
-	lastRequestTime time.Time
-}
+type RequestOption func(r *http.Request)
 
-func NewBrowser(options ...BrowserOption) *Browser {
-	browser := &Browser{Client: NewHTTPClient()}
-
-	for _, option := range options {
-		option(browser)
-	}
-
-	return browser
-}
-
-func (b *Browser) CloseIdleConnections() {
-	if b.Client != nil {
-		b.Client.CloseIdleConnections()
+func WithHeader(name, value string) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set(name, value)
 	}
 }
 
-func (b *Browser) Do(req *http.Request) (*http.Response, error) {
+func WithHeaders(headers map[string]string) func(r *http.Request) {
+	return func(r *http.Request) {
+		for name, value := range headers {
+			r.Header.Set(name, value)
+		}
+	}
+}
+
+func WithContentType(contentType string) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set("Content-Type", contentType)
+	}
+}
+
+func WithAccept(accept string) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set("Accept", accept)
+	}
+}
+
+func WithReferer(referer string) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.Header.Set("Referer", referer)
+	}
+}
+
+func WithBasicAuth(username, password string) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.SetBasicAuth(username, password)
+	}
+}
+
+func WithCookie(cookie *http.Cookie) func(r *http.Request) {
+	return func(r *http.Request) {
+		r.AddCookie(cookie)
+	}
+}
+
+func (b *Browser) Do(req *http.Request, options ...RequestOption) (*http.Response, error) {
 	b.ensureClient()
 	b.setHeaders(req)
-	b.waitRequestDelay()
-	defer b.setLastRequestTime()
+	b.rateLimit(req)
+	defer b.notifyRateLimiter(req)
+
+	for _, option := range options {
+		option(req)
+	}
 
 	return b.Client.Do(req)
 }
 
-func (b *Browser) Get(url string) (resp *http.Response, err error) {
+func (b *Browser) Get(url string, options ...RequestOption) (resp *http.Response, err error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return b.Do(req)
+	return b.Do(req, options...)
 }
 
-func (b *Browser) Head(url string) (resp *http.Response, err error) {
+func (b *Browser) Head(url string, options ...RequestOption) (resp *http.Response, err error) {
 	req, err := http.NewRequest(http.MethodHead, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return b.Do(req)
+	return b.Do(req, options...)
 }
 
-func (b *Browser) Post(url, contentType string, body io.Reader) (resp *http.Response, err error) {
+func (b *Browser) Post(url, contentType string, body io.Reader, options ...RequestOption) (resp *http.Response, err error) {
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return nil, err
@@ -102,16 +158,16 @@ func (b *Browser) Post(url, contentType string, body io.Reader) (resp *http.Resp
 	b.setHeaders(req)
 	req.Header.Set("Content-Type", contentType)
 
-	return b.Client.Do(req)
+	return b.Do(req, options...)
 }
 
-func (b *Browser) PostForm(url string, data url.Values) (resp *http.Response, err error) {
-	return b.Post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+func (b *Browser) PostForm(url string, data url.Values, options ...RequestOption) (resp *http.Response, err error) {
+	return b.Post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()), options...)
 }
 
 func (b *Browser) ensureClient() {
 	if b.Client == nil {
-		b.Client = http.DefaultClient
+		b.Client = NewHTTPClient()
 	}
 }
 
@@ -121,21 +177,14 @@ func (b *Browser) setHeaders(req *http.Request) {
 	}
 }
 
-func (b *Browser) waitRequestDelay() {
-	if b.RequestDelay == 0 {
-		return
-	}
-
-	timeSinceLastRequest := time.Now().Sub(b.lastRequestTime)
-	if timeSinceLastRequest < b.RequestDelay {
-		time.Sleep(b.RequestDelay - timeSinceLastRequest)
+func (b *Browser) rateLimit(req *http.Request) {
+	if b.RateLimiter != nil {
+		time.Sleep(b.RateLimiter.GetBackoffAt(req, time.Now()))
 	}
 }
 
-func (b *Browser) setLastRequestTime() {
-	if b.RequestDelay == 0 {
-		return
+func (b *Browser) notifyRateLimiter(req *http.Request) {
+	if b.RateLimiter != nil {
+		b.RateLimiter.AddRequest(req, time.Now())
 	}
-
-	b.lastRequestTime = time.Now()
 }

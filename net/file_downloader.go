@@ -3,7 +3,6 @@ package net
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -25,24 +24,11 @@ type DownloadProgress struct {
 type DownloadProgressCallback func(DownloadProgress)
 
 type FileDownloader struct {
-	Client *http.Client
-}
-
-func NewFileDownloader() *FileDownloader {
-	return &FileDownloader{
-		Client: NewHTTPClient(WithTimeout(time.Hour)),
-	}
+	Browser Browser
 }
 
 func (d *FileDownloader) DownloadFiles(files []FileDownload) error {
-	for _, file := range files {
-		err := d.downloadFile(file)
-		if err != nil {
-			return fmt.Errorf("failed to download %s: %w", filepath.Base(file.FilePath), err)
-		}
-	}
-
-	return nil
+	return d.DownloadFilesWithProgressUpdates(files, func(_ DownloadProgress) {})
 }
 
 func (d *FileDownloader) DownloadFilesWithProgressUpdates(fileDownloads []FileDownload, callback DownloadProgressCallback) error {
@@ -69,16 +55,7 @@ func (d *FileDownloader) DownloadFilesWithProgressUpdates(fileDownloads []FileDo
 }
 
 func (d *FileDownloader) getContentLength(url string) (int64, error) {
-	if d.Client == nil {
-		d.Client = NewHTTPClient(WithTimeout(10 * time.Minute))
-	}
-
-	req, err := http.NewRequest(http.MethodHead, url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := d.Client.Do(req)
+	resp, err := d.Browser.Head(url)
 	if err != nil {
 		return 0, fmt.Errorf("failed to do request: %w", err)
 	}
@@ -91,51 +68,8 @@ func (d *FileDownloader) getContentLength(url string) (int64, error) {
 	return resp.ContentLength, nil
 }
 
-func (d *FileDownloader) downloadFile(fileDownload FileDownload) error {
-	if d.Client == nil {
-		d.Client = NewHTTPClient(WithTimeout(10 * time.Minute))
-	}
-
-	req, err := http.NewRequest(http.MethodGet, fileDownload.URL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := d.Client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("got non-2XX response: %s", resp.Status)
-	}
-
-	file, err := os.OpenFile(fileDownload.FilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open output file: %w", err)
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write to file: %w", err)
-	}
-
-	return nil
-}
-
 func (d *FileDownloader) downloadFileWithCallback(fileDownload FileDownload, callback DownloadProgressCallback) error {
-	if d.Client == nil {
-		d.Client = NewHTTPClient(WithTimeout(10 * time.Minute))
-	}
-
-	req, err := http.NewRequest(http.MethodGet, fileDownload.URL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := d.Client.Do(req)
+	resp, err := d.Browser.Get(fileDownload.URL)
 	if err != nil {
 		return fmt.Errorf("failed to do request: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"time"
 )
 
@@ -38,6 +39,12 @@ func WithDialTimeout(timeout time.Duration) func(h *http.Client) {
 func WithTLSClientConfig(tlsConfig *tls.Config) func(h *http.Client) {
 	return func(h *http.Client) {
 		h.Transport.(*http.Transport).TLSClientConfig = tlsConfig
+	}
+}
+
+func WithCookieJar(jar *cookiejar.Jar) func(h *http.Client) {
+	return func(h *http.Client) {
+		h.Jar = jar
 	}
 }
 

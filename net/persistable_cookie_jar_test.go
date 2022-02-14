@@ -2,7 +2,6 @@ package net_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/mdelillo/go-utils/net"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
@@ -13,7 +12,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 )
 
@@ -25,25 +23,7 @@ func testPersistableCookieJar(t *testing.T, context spec.G, it spec.S) {
 	var server *httptest.Server
 
 	it.Before(func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/200":
-				w.WriteHeader(http.StatusOK)
-			case "/headers":
-				for key, value := range r.Header {
-					_, _ = fmt.Fprintf(w, "%s: %s\n", key, value)
-				}
-			case "/set-cookies":
-				http.SetCookie(w, &http.Cookie{Name: "some-cookie", Value: "some-value"})
-				http.SetCookie(w, &http.Cookie{Name: "some-other-cookie", Value: "some-other-value"})
-			case "/get-cookies":
-				for _, cookie := range r.Cookies() {
-					_, _ = fmt.Fprintf(w, "%s: %s\n", cookie.Name, cookie.Value)
-				}
-			default:
-				w.WriteHeader(http.StatusNotFound)
-			}
-		}))
+		server = httptest.NewServer(testServerHandler)
 	})
 
 	it.After(func() {
@@ -58,11 +38,6 @@ func testPersistableCookieJar(t *testing.T, context spec.G, it spec.S) {
 		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
 
-		serverURL, err := url.Parse(server.URL)
-		require.NoError(t, err)
-
-		assert.Len(t, jar.Cookies(serverURL), 2)
-
 		cookies := jar.Export()
 
 		serializedCookies, err := json.Marshal(cookies)
@@ -76,14 +51,13 @@ func testPersistableCookieJar(t *testing.T, context spec.G, it spec.S) {
 
 		newJar.Import(deserializedCookies)
 
-		resp, err = newClient.Get(server.URL + "/get-cookies")
+		resp, err = newClient.Get(server.URL + "/show-request")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
 		body, err := ioutil.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		assert.Contains(t, string(body), "some-cookie: some-value")
-		assert.Contains(t, string(body), "some-other-cookie: some-other-value")
+		assert.Contains(t, string(body), "Cookie: some-cookie=some-value; some-other-cookie=some-other-value")
 	})
 }
