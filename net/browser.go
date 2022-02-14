@@ -3,8 +3,10 @@ package net
 import (
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type BrowserOption func(*Browser)
@@ -29,13 +31,33 @@ func WithDefaultHeaders(headers map[string]string) func(*Browser) {
 	}
 }
 
+func WithRequestDelay(delay time.Duration) func(*Browser) {
+	return func(b *Browser) {
+		b.RequestDelay = delay
+	}
+}
+
+func WithCookieJar(jar *cookiejar.Jar) func(*Browser) {
+	return func(b *Browser) {
+		b.Client.Jar = jar
+	}
+}
+
 type Browser struct {
-	Client  *http.Client
-	Headers map[string]string
+	Client          *http.Client
+	Headers         map[string]string
+	RequestDelay    time.Duration
+	lastRequestTime time.Time
 }
 
 func NewBrowser(options ...BrowserOption) *Browser {
-	return &Browser{Client: NewHTTPClient()}
+	browser := &Browser{Client: NewHTTPClient()}
+
+	for _, option := range options {
+		option(browser)
+	}
+
+	return browser
 }
 
 func (b *Browser) CloseIdleConnections() {
@@ -47,6 +69,9 @@ func (b *Browser) CloseIdleConnections() {
 func (b *Browser) Do(req *http.Request) (*http.Response, error) {
 	b.ensureClient()
 	b.setHeaders(req)
+	b.waitRequestDelay()
+	defer b.setLastRequestTime()
+
 	return b.Client.Do(req)
 }
 
@@ -69,8 +94,6 @@ func (b *Browser) Head(url string) (resp *http.Response, err error) {
 }
 
 func (b *Browser) Post(url, contentType string, body io.Reader) (resp *http.Response, err error) {
-	b.ensureClient()
-
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return nil, err
@@ -96,4 +119,23 @@ func (b *Browser) setHeaders(req *http.Request) {
 	for name, value := range b.Headers {
 		req.Header.Set(name, value)
 	}
+}
+
+func (b *Browser) waitRequestDelay() {
+	if b.RequestDelay == 0 {
+		return
+	}
+
+	timeSinceLastRequest := time.Now().Sub(b.lastRequestTime)
+	if timeSinceLastRequest < b.RequestDelay {
+		time.Sleep(b.RequestDelay - timeSinceLastRequest)
+	}
+}
+
+func (b *Browser) setLastRequestTime() {
+	if b.RequestDelay == 0 {
+		return
+	}
+
+	b.lastRequestTime = time.Now()
 }
