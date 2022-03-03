@@ -14,7 +14,9 @@ import (
 func DownloadFilesWithProgress(fileDownloads []FileDownload) error {
 	const printInterval = time.Second / 10
 
-	downloader := FileDownloader{}
+	downloader := FileDownloader{
+		Browser: NewBrowser(WithClient(NewHTTPClient(WithTimeout(time.Hour)))),
+	}
 
 	progresses := &downloadsProgresses{
 		fileDownloads: fileDownloads,

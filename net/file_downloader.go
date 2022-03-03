@@ -24,7 +24,7 @@ type DownloadProgress struct {
 type DownloadProgressCallback func(DownloadProgress)
 
 type FileDownloader struct {
-	Browser Browser
+	Browser *Browser
 }
 
 func (d *FileDownloader) DownloadFiles(files []FileDownload) error {
