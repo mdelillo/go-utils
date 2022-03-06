@@ -3,14 +3,16 @@ package net
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 )
 
 type FileDownload struct {
-	URL      string
-	FilePath string
+	URL                    string
+	FilePath               string
+	UseGetForContentLength bool
 }
 
 type DownloadProgress struct {
@@ -33,7 +35,7 @@ func (d *FileDownloader) DownloadFiles(files []FileDownload) error {
 
 func (d *FileDownloader) DownloadFilesWithProgressUpdates(fileDownloads []FileDownload, callback DownloadProgressCallback) error {
 	for _, fileDownload := range fileDownloads {
-		contentLength, err := d.getContentLength(fileDownload.URL)
+		contentLength, err := d.getContentLength(fileDownload.URL, fileDownload.UseGetForContentLength)
 		if err != nil {
 			return fmt.Errorf("failed to get content size of %s: %w", filepath.Base(fileDownload.FilePath), err)
 		}
@@ -54,8 +56,16 @@ func (d *FileDownloader) DownloadFilesWithProgressUpdates(fileDownloads []FileDo
 	return nil
 }
 
-func (d *FileDownloader) getContentLength(url string) (int64, error) {
-	resp, err := d.Browser.Head(url)
+func (d *FileDownloader) getContentLength(url string, useGet bool) (int64, error) {
+	var (
+		resp *http.Response
+		err  error
+	)
+	if useGet {
+		resp, err = d.Browser.Get(url)
+	} else {
+		resp, err = d.Browser.Head(url)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to do request: %w", err)
 	}
