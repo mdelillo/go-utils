@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"time"
 )
 
@@ -42,7 +41,7 @@ func WithTLSClientConfig(tlsConfig *tls.Config) func(h *http.Client) {
 	}
 }
 
-func WithCookieJar(jar *cookiejar.Jar) func(h *http.Client) {
+func WithCookieJar(jar http.CookieJar) func(h *http.Client) {
 	return func(h *http.Client) {
 		h.Jar = jar
 	}
