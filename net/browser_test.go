@@ -18,14 +18,16 @@ func TestBrowser(t *testing.T) {
 
 func testBrowser(t *testing.T, context spec.G, it spec.S) {
 	var (
-		server *httptest.Server
+		server  *httptest.Server
+		handler *testServerHandler
 
 		assert  = assertpkg.New(t)
 		require = requirepkg.New(t)
 	)
 
 	it.Before(func() {
-		server = httptest.NewServer(testServerHandler)
+		handler = &testServerHandler{}
+		server = httptest.NewServer(handler.Handler())
 	})
 
 	it.After(func() {
@@ -182,10 +184,10 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 			})
 		})
 
-		context("WithRateLimiter", func() {
+		context("WithDefaultRateLimiter", func() {
 			it("uses the rate limiter to wait between requests", func() {
 				rateLimiter := &mockRateLimiter{}
-				browser := net.NewBrowser(net.WithRateLimiter(rateLimiter))
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(rateLimiter))
 
 				_, err := browser.Get(server.URL)
 				require.NoError(err)
@@ -194,21 +196,53 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 
 				_, err = browser.Head(server.URL)
 				require.NoError(err)
-				require.NoError(err)
 				assert.Equal(2, rateLimiter.getBackoffCallCount)
 				assert.Equal(2, rateLimiter.addRequestCallCount)
 
 				_, err = browser.Post(server.URL, "", nil)
+				require.NoError(err)
 				assert.Equal(3, rateLimiter.getBackoffCallCount)
 				assert.Equal(3, rateLimiter.addRequestCallCount)
 
 				_, err = browser.PostForm(server.URL, nil)
+				require.NoError(err)
 				assert.Equal(4, rateLimiter.getBackoffCallCount)
 				assert.Equal(4, rateLimiter.addRequestCallCount)
 
-				_, err = browser.Do(&http.Request{})
+				req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+				require.NoError(err)
+				_, err = browser.Do(req)
+				require.NoError(err)
 				assert.Equal(5, rateLimiter.getBackoffCallCount)
 				assert.Equal(5, rateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithDefaultRetrier", func() {
+			it("uses the retrier to determine whether to retry the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+
+				_, err := browser.Get(server.URL + "/500")
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				_, err = browser.Head(server.URL + "/500")
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
+
+				_, err = browser.Post(server.URL+"/500", "", nil)
+				require.NoError(err)
+				assert.Equal(9, handler.RequestCount)
+
+				_, err = browser.PostForm(server.URL+"/500", nil)
+				require.NoError(err)
+				assert.Equal(12, handler.RequestCount)
+
+				req, err := http.NewRequest(http.MethodGet, server.URL+"/500", nil)
+				require.NoError(err)
+				_, err = browser.Do(req)
+				require.NoError(err)
+				assert.Equal(15, handler.RequestCount)
 			})
 		})
 	})
@@ -358,6 +392,49 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 				assert.Contains(string(body), "Cookie: some-name=some-value")
 			})
 		})
+
+		context("WithRateLimiter", func() {
+			it("uses the rate limiter to wait between requests", func() {
+				defaultRateLimiter := &mockRateLimiter{}
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(defaultRateLimiter))
+
+				rateLimiter := &mockRateLimiter{}
+
+				req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+				require.NoError(err)
+				_, err = browser.Do(req, net.WithRateLimiter(rateLimiter))
+				require.NoError(err)
+				assert.Equal(1, rateLimiter.getBackoffCallCount)
+				assert.Equal(1, rateLimiter.addRequestCallCount)
+
+				assert.Equal(0, defaultRateLimiter.getBackoffCallCount)
+				assert.Equal(0, defaultRateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithRetrier", func() {
+			it("uses the retrier for the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 2}))
+
+				req, err := http.NewRequest(http.MethodGet, server.URL+"/500", nil)
+				require.NoError(err)
+				_, err = browser.Do(req, net.WithRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				req, err = http.NewRequest(http.MethodGet, server.URL+"/500", nil)
+				require.NoError(err)
+				_, err = browser.Do(req)
+				require.NoError(err)
+				assert.Equal(5, handler.RequestCount)
+
+				req, err = http.NewRequest(http.MethodGet, server.URL+"/500", nil)
+				require.NoError(err)
+				_, err = browser.Do(req, net.WithRetrier(nil))
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
+			})
+		})
 	})
 
 	context("Get", func() {
@@ -482,6 +559,78 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 				require.NoError(err)
 
 				assert.Contains(string(body), "Cookie: some-name=some-value")
+			})
+		})
+
+		context("WithRateLimiter", func() {
+			it("uses the rate limiter to wait between requests", func() {
+				defaultRateLimiter := &mockRateLimiter{}
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(defaultRateLimiter))
+
+				rateLimiter := &mockRateLimiter{}
+
+				_, err := browser.Get(server.URL, net.WithRateLimiter(rateLimiter))
+				require.NoError(err)
+				assert.Equal(1, rateLimiter.getBackoffCallCount)
+				assert.Equal(1, rateLimiter.addRequestCallCount)
+
+				assert.Equal(0, defaultRateLimiter.getBackoffCallCount)
+				assert.Equal(0, defaultRateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithRetrier", func() {
+			it("uses the retrier for the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 2}))
+
+				_, err := browser.Get(server.URL+"/500", net.WithRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				_, err = browser.Get(server.URL + "/500")
+				require.NoError(err)
+				assert.Equal(5, handler.RequestCount)
+
+				_, err = browser.Get(server.URL+"/500", net.WithRetrier(nil))
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
+			})
+		})
+	})
+
+	context("Head", func() {
+		context("WithRateLimiter", func() {
+			it("uses the rate limiter to wait between requests", func() {
+				defaultRateLimiter := &mockRateLimiter{}
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(defaultRateLimiter))
+
+				rateLimiter := &mockRateLimiter{}
+
+				_, err := browser.Head(server.URL, net.WithRateLimiter(rateLimiter))
+				require.NoError(err)
+				assert.Equal(1, rateLimiter.getBackoffCallCount)
+				assert.Equal(1, rateLimiter.addRequestCallCount)
+
+				assert.Equal(0, defaultRateLimiter.getBackoffCallCount)
+				assert.Equal(0, defaultRateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithRetrier", func() {
+			it("uses the retrier for the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 2}))
+
+				_, err := browser.Head(server.URL+"/500", net.WithRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				_, err = browser.Head(server.URL + "/500")
+				require.NoError(err)
+				assert.Equal(5, handler.RequestCount)
+
+				_, err = browser.Head(server.URL+"/500", net.WithRetrier(nil))
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
 			})
 		})
 	})
@@ -610,6 +759,41 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 				assert.Contains(string(body), "Cookie: some-name=some-value")
 			})
 		})
+
+		context("WithRateLimiter", func() {
+			it("uses the rate limiter to wait between requests", func() {
+				defaultRateLimiter := &mockRateLimiter{}
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(defaultRateLimiter))
+
+				rateLimiter := &mockRateLimiter{}
+
+				_, err := browser.Post(server.URL, "", nil, net.WithRateLimiter(rateLimiter))
+				require.NoError(err)
+				assert.Equal(1, rateLimiter.getBackoffCallCount)
+				assert.Equal(1, rateLimiter.addRequestCallCount)
+
+				assert.Equal(0, defaultRateLimiter.getBackoffCallCount)
+				assert.Equal(0, defaultRateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithRetrier", func() {
+			it("uses the retrier for the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 2}))
+
+				_, err := browser.Post(server.URL+"/500", "", nil, net.WithRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				_, err = browser.Post(server.URL+"/500", "", nil)
+				require.NoError(err)
+				assert.Equal(5, handler.RequestCount)
+
+				_, err = browser.Post(server.URL+"/500", "", nil, net.WithRetrier(nil))
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
+			})
+		})
 	})
 
 	context("PostForm", func() {
@@ -734,6 +918,41 @@ func testBrowser(t *testing.T, context spec.G, it spec.S) {
 				require.NoError(err)
 
 				assert.Contains(string(body), "Cookie: some-name=some-value")
+			})
+		})
+
+		context("WithRateLimiter", func() {
+			it("uses the rate limiter to wait between requests", func() {
+				defaultRateLimiter := &mockRateLimiter{}
+				browser := net.NewBrowser(net.WithDefaultRateLimiter(defaultRateLimiter))
+
+				rateLimiter := &mockRateLimiter{}
+
+				_, err := browser.PostForm(server.URL, nil, net.WithRateLimiter(rateLimiter))
+				require.NoError(err)
+				assert.Equal(1, rateLimiter.getBackoffCallCount)
+				assert.Equal(1, rateLimiter.addRequestCallCount)
+
+				assert.Equal(0, defaultRateLimiter.getBackoffCallCount)
+				assert.Equal(0, defaultRateLimiter.addRequestCallCount)
+			})
+		})
+
+		context("WithRetrier", func() {
+			it("uses the retrier for the request", func() {
+				browser := net.NewBrowser(net.WithDefaultRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 2}))
+
+				_, err := browser.PostForm(server.URL+"/500", nil, net.WithRetrier(net.ExponentialBackoffRetrier{MaxAttempts: 3}))
+				require.NoError(err)
+				assert.Equal(3, handler.RequestCount)
+
+				_, err = browser.PostForm(server.URL+"/500", nil)
+				require.NoError(err)
+				assert.Equal(5, handler.RequestCount)
+
+				_, err = browser.PostForm(server.URL+"/500", nil, net.WithRetrier(nil))
+				require.NoError(err)
+				assert.Equal(6, handler.RequestCount)
 			})
 		})
 	})

@@ -14,11 +14,11 @@ type mockRateLimiter struct {
 	addRequestCallCount int
 }
 
-func (m *mockRateLimiter) AddRequest(_ *http.Request, _ time.Time) {
-	m.addRequestCallCount++
+func (r *mockRateLimiter) AddRequest(_ *http.Request, _ time.Time) {
+	r.addRequestCallCount++
 }
 
-func (m *mockRateLimiter) GetBackoffAt(_ *http.Request, _ time.Time) time.Duration {
-	m.getBackoffCallCount++
-	return m.getBackoffReturn
+func (r *mockRateLimiter) GetBackoffAt(_ *http.Request, _ time.Time) time.Duration {
+	r.getBackoffCallCount++
+	return r.getBackoffReturn
 }

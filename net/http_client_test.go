@@ -23,10 +23,14 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func testHTTPClient(t *testing.T, context spec.G, it spec.S) {
-	var server *httptest.Server
+	var (
+		server  *httptest.Server
+		handler *testServerHandler
+	)
 
 	it.Before(func() {
-		server = httptest.NewServer(testServerHandler)
+		handler = &testServerHandler{}
+		server = httptest.NewServer(handler.Handler())
 	})
 
 	it.After(func() {

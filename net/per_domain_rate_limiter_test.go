@@ -1,12 +1,10 @@
 package net_test
 
 import (
-	"fmt"
 	"github.com/mdelillo/go-utils/net"
 	"github.com/sclevine/spec"
 	"github.com/sclevine/spec/report"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"testing"
 	"time"
@@ -82,27 +80,32 @@ func testPerDomainRateLimiter(t *testing.T, context spec.G, it spec.S) {
 				DefaultRateLimiter: someDefaultRateLimiter,
 			}
 
-			rateLimiter.GetBackoffAt(newGetRequest(t, "some-domain.com"), time.Now())
+			backoff := rateLimiter.GetBackoffAt(newGetRequest(t, "some-domain.com"), time.Now())
+			assert.Equal(t, time.Second, backoff)
 			assert.Equal(t, 1, someDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 0, someOtherDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 0, someDefaultRateLimiter.getBackoffCallCount)
 
-			rateLimiter.GetBackoffAt(newGetRequest(t, "subdomain.some-domain.com"), time.Now())
+			backoff = rateLimiter.GetBackoffAt(newGetRequest(t, "subdomain.some-domain.com"), time.Now())
+			assert.Equal(t, time.Second, backoff)
 			assert.Equal(t, 2, someDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 0, someOtherDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 0, someDefaultRateLimiter.getBackoffCallCount)
 
-			rateLimiter.GetBackoffAt(newGetRequest(t, "some-other-domain.com"), time.Now())
+			backoff = rateLimiter.GetBackoffAt(newGetRequest(t, "some-other-domain.com"), time.Now())
+			assert.Equal(t, 2*time.Second, backoff)
 			assert.Equal(t, 2, someDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 1, someOtherDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 0, someDefaultRateLimiter.getBackoffCallCount)
 
-			rateLimiter.GetBackoffAt(newGetRequest(t, "some-unknown-domain.com"), time.Now())
+			backoff = rateLimiter.GetBackoffAt(newGetRequest(t, "some-unknown-domain.com"), time.Now())
+			assert.Equal(t, 3*time.Second, backoff)
 			assert.Equal(t, 2, someDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 1, someOtherDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 1, someDefaultRateLimiter.getBackoffCallCount)
 
-			rateLimiter.GetBackoffAt(newGetRequest(t, "not-some-domain.com"), time.Now())
+			backoff = rateLimiter.GetBackoffAt(newGetRequest(t, "not-some-domain.com"), time.Now())
+			assert.Equal(t, 3*time.Second, backoff)
 			assert.Equal(t, 2, someDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 1, someOtherDomainRateLimiter.getBackoffCallCount)
 			assert.Equal(t, 2, someDefaultRateLimiter.getBackoffCallCount)
@@ -118,13 +121,4 @@ func testPerDomainRateLimiter(t *testing.T, context spec.G, it spec.S) {
 			assert.Equal(t, 0*time.Second, rateLimiter.GetBackoffAt(&http.Request{}, time.Now()))
 		})
 	})
-}
-
-func newGetRequest(t *testing.T, domain string) *http.Request {
-	t.Helper()
-
-	url := fmt.Sprintf("https://%s/some-path", domain)
-	someDomainRequest, err := http.NewRequest(http.MethodGet, url, nil)
-	require.NoError(t, err)
-	return someDomainRequest
 }

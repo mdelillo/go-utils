@@ -15,10 +15,15 @@ type RateLimiter interface {
 	GetBackoffAt(req *http.Request, t time.Time) time.Duration
 }
 
+type Retrier interface {
+	ShouldRetry(req *http.Request, resp *http.Response, attempt int) (retry bool, backoff time.Duration)
+}
+
 type Browser struct {
 	Client      *http.Client
 	Headers     map[string]string
 	RateLimiter RateLimiter
+	Retrier     Retrier
 }
 
 func NewBrowser(options ...BrowserOption) *Browser {
@@ -66,66 +71,119 @@ func WithDefaultUserAgent(userAgent string) func(*Browser) {
 	}
 }
 
-func WithRateLimiter(rateLimiter RateLimiter) func(*Browser) {
+func WithDefaultRetrier(retrier Retrier) func(*Browser) {
+	return func(b *Browser) {
+		b.Retrier = retrier
+	}
+}
+
+func WithDefaultRateLimiter(rateLimiter RateLimiter) func(*Browser) {
 	return func(b *Browser) {
 		b.RateLimiter = rateLimiter
 	}
 }
 
-type RequestOption func(r *http.Request)
+type requestOptions struct {
+	rateLimiter RateLimiter
+	retrier     Retrier
+}
 
-func WithHeader(name, value string) func(r *http.Request) {
-	return func(r *http.Request) {
+type RequestOption func(r *http.Request, opts *requestOptions)
+
+func WithHeader(name, value string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.Header.Set(name, value)
 	}
 }
 
-func WithHeaders(headers map[string]string) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithHeaders(headers map[string]string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		for name, value := range headers {
 			r.Header.Set(name, value)
 		}
 	}
 }
 
-func WithContentType(contentType string) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithContentType(contentType string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.Header.Set("Content-Type", contentType)
 	}
 }
 
-func WithAccept(accept string) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithAccept(accept string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.Header.Set("Accept", accept)
 	}
 }
 
-func WithReferer(referer string) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithReferer(referer string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.Header.Set("Referer", referer)
 	}
 }
 
-func WithBasicAuth(username, password string) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithBasicAuth(username, password string) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.SetBasicAuth(username, password)
 	}
 }
 
-func WithCookie(cookie *http.Cookie) func(r *http.Request) {
-	return func(r *http.Request) {
+func WithCookie(cookie *http.Cookie) func(r *http.Request, _ *requestOptions) {
+	return func(r *http.Request, _ *requestOptions) {
 		r.AddCookie(cookie)
+	}
+}
+
+func WithRateLimiter(rateLimiter RateLimiter) func(_ *http.Request, opts *requestOptions) {
+	return func(_ *http.Request, opts *requestOptions) {
+		opts.rateLimiter = rateLimiter
+	}
+}
+
+func WithRetrier(retrier Retrier) func(_ *http.Request, opts *requestOptions) {
+	return func(_ *http.Request, opts *requestOptions) {
+		opts.retrier = retrier
 	}
 }
 
 func (b *Browser) Do(req *http.Request, options ...RequestOption) (*http.Response, error) {
 	b.ensureClient()
 	b.setHeaders(req)
-	b.rateLimit(req)
-	defer b.notifyRateLimiter(req)
+
+	opts := &requestOptions{
+		rateLimiter: b.RateLimiter,
+		retrier:     b.Retrier,
+	}
 
 	for _, option := range options {
-		option(req)
+		option(req, opts)
+	}
+
+	var attempt int
+	for {
+		attempt++
+
+		resp, err := b.doWithRateLimiter(req, opts.rateLimiter)
+		if err != nil {
+			return resp, err
+		}
+
+		if opts.retrier != nil {
+			shouldRetry, backoff := opts.retrier.ShouldRetry(req, resp, attempt)
+			if shouldRetry {
+				time.Sleep(backoff)
+				continue
+			}
+		}
+
+		return resp, nil
+	}
+}
+
+func (b *Browser) doWithRateLimiter(req *http.Request, rateLimiter RateLimiter) (*http.Response, error) {
+	if rateLimiter != nil {
+		time.Sleep(rateLimiter.GetBackoffAt(req, time.Now()))
+		defer rateLimiter.AddRequest(req, time.Now())
 	}
 
 	return b.Client.Do(req)
@@ -174,17 +232,5 @@ func (b *Browser) ensureClient() {
 func (b *Browser) setHeaders(req *http.Request) {
 	for name, value := range b.Headers {
 		req.Header.Set(name, value)
-	}
-}
-
-func (b *Browser) rateLimit(req *http.Request) {
-	if b.RateLimiter != nil {
-		time.Sleep(b.RateLimiter.GetBackoffAt(req, time.Now()))
-	}
-}
-
-func (b *Browser) notifyRateLimiter(req *http.Request) {
-	if b.RateLimiter != nil {
-		b.RateLimiter.AddRequest(req, time.Now())
 	}
 }

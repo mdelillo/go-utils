@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestServer(t *testing.T) {
+func TestNetServer(t *testing.T) {
 	spec.Run(t, "Server", testServer, spec.Report(report.Terminal{}))
 }
 

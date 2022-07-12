@@ -20,10 +20,14 @@ func TestPersistableCookieJar(t *testing.T) {
 }
 
 func testPersistableCookieJar(t *testing.T, context spec.G, it spec.S) {
-	var server *httptest.Server
+	var (
+		handler *testServerHandler
+		server  *httptest.Server
+	)
 
 	it.Before(func() {
-		server = httptest.NewServer(testServerHandler)
+		handler = &testServerHandler{}
+		server = httptest.NewServer(handler.Handler())
 	})
 
 	it.After(func() {
